@@ -1,14 +1,14 @@
 # Intelligent-Multi-Agent-Planning-and-Search-System-for-Smart-Rescue-Operations
 Simulated smart rescue environment (like a disaster-struck building or terrain). Multiple autonomous agents must search for and rescue victims using heuristic search (A*), planning (STRIPS), and cooperative coordination, real-time re-planning and logical reasoning to complete rescue missions effectively.
 
-## Problem Statement:
+## 🧭 Problem Statement:
 In real-world disaster scenarios—such as earthquakes, floods, or fires—timely and efficient search-and-rescue operations are critical to saving lives. Traditional rescue efforts often suffer from a lack of coordination, dynamic changes in the environment (e.g., debris, fire spread), and limited information about victims’ locations.
 
 This project addresses the challenge of coordinated rescue planning in such dynamic settings by designing an intelligent multi-agent system capable of autonomous navigation, task allocation, and dynamic replanning. The system will integrate heuristic search algorithms (A*, IDA*), STRIPS-based planning, and logical reasoning mechanisms to enable multiple agents to cooperatively plan, adapt, and execute rescue missions in an evolving environment.
 
 The objective is to develop a robust, hybrid AI framework that blends centralized task planning and decentralized coordination to maximize rescue efficiency, minimize path conflicts, and dynamically adjust to environmental changes.
 
-## Literature & Research Background
+## 📚 Literature & Research Background
 The field of multi-agent systems (MAS) has seen rapid growth in applications ranging from autonomous vehicles to distributed robotics. In the context of disaster response and search-and-rescue (SAR), recent research has focused on combining multi-agent pathfinding (MAPF) with adaptive learning, planning, and coordination mechanisms.
 
 Lu et al. (2023) proposed DrMaMP, a distributed real-time multi-agent planner capable of navigating cluttered and dynamic environments. Their approach uses decomposition and replanning to optimize rescue time while avoiding collisions.
@@ -25,7 +25,7 @@ Despite these advances, most existing approaches either focus solely on learning
 
 This project aims to fill that gap by combining STRIPS-based planning, A*/IDA* pathfinding, and logical inference mechanisms in a unified architecture that can adapt dynamically to environmental changes and coordinate multiple agents efficiently in disaster zones.
 
-## Abstract
+## 🧪 Abstract
 In critical rescue scenarios such as natural disasters, timely coordination among multiple autonomous agents is essential for maximizing survivor recovery and minimizing response time. This project presents the design and development of an Intelligent Multi-Agent Planning and Search System for smart rescue operations in dynamic environments. The proposed system integrates heuristic search algorithms (A*, Greedy, IDA*), STRIPS-based action planning, and logical reasoning to enable agents to collaboratively explore, plan, and adapt in real time.
 
 A grid-based simulation environment with dynamic obstacles and variable terrain conditions will be constructed to evaluate the system. The rescue agents will be capable of autonomous decision-making, dynamic pathfinding, conflict resolution, and task reassignment under environmental uncertainty. The hybrid architecture leverages centralized planning for mission initialization and decentralized execution with continuous replanning and local inference.
