@@ -11,14 +11,14 @@ from tensorboardX import SummaryWriter
 from utils.buffer import ReplayBuffer
 from utils.env_wrappers import SubprocVecEnv
 from utils.misc import apply_to_all_elements, timeout, RunningMeanStd
-# from algorithms.sac import SAC
+#from algorithms.sac import SAC
 
 from algorithms.sac_adv import SAC
-# from envs.ma_vizdoom.ma_vizdoom import VizdoomMultiAgentEnv
-from envs.maps.multiagent_env import GridWorld, VectObsEnv
-from envs.maps.load_env import search_and_rescue
+#from envs.ma_vizdoom.ma_vizdoom import VizdoomMultiAgentEnv
+from envs.magw.multiagent_env import GridWorld, VectObsEnv
+from envs.magw.load_env import search_and_rescue
 
-from envs.maps.comms import get_count_based_novelties_comm, get_intrinsic_rewards_with_comm
+from envs.magw.comms import get_count_based_novelties_comm, get_intrinsic_rewards_with_comm
 
 np.random.seed(2)
 
@@ -38,15 +38,15 @@ def get_count_based_novelties(env, state_inds, device='cpu'):
         [np.concatenate(
             [env_visit_counts[j][tuple(zip(*state_inds[k]))].reshape(-1, 1, 1)
              for j in range(config.num_agents)], axis=1)
-            for k in range(config.num_agents)], axis=2)
+         for k in range(config.num_agents)], axis=2)
 
     # how novel each agent considers all agents observations at every step
     novelties = np.power(np.maximum(samp_visit_counts, 1), -config.decay)
     return torch.tensor(novelties, device=device, dtype=torch.float32)
 
-
 def get_intrinsic_rewards(novelties, config, intr_rew_rms,
                           update_irrms=False, active_envs=None, device='cpu'):
+
     """
     Method to compute the intrinsic rewards based on novelties
     :param novelties: (np.array) -  array of size (num_threads, i, j) describing novelty by agent i as perceived by agent j.
@@ -102,14 +102,12 @@ def get_intrinsic_rewards(novelties, config, intr_rew_rms,
 
     return intr_rews
 
-
 def make_parallel_env(config, seed):
     """Method to create parallel environemnts
 
     """
     lock = multiprocessing.Lock()
     print(config)
-
     def get_env_fn(rank):
         def init_env():
             if config.env_type == 'gridworld':
@@ -127,30 +125,27 @@ def make_parallel_env(config, seed):
                                            stay_act=False), l=3)
             else:  # vizdoom
                 env = VizdoomMultiAgentEnv(task_id=config.task_config,
-                                           env_id=(seed - 1) * 64 + rank,
-                                           # assumes no more than 64 environments per run
+                                           env_id=(seed - 1) * 64 + rank,  # assumes no more than 64 environments per run
                                            seed=seed * 640 + rank * 10,  # assumes no more than 10 agents per run
                                            lock=lock,
                                            skip_frames=config.frame_skip)
             return env
-
         return init_env
-
     return SubprocVecEnv([get_env_fn(i) for i in
                           range(config.n_rollout_threads)])
-    # return get_env_fn(100)
+    #return get_env_fn(100)
 
 
 def run(config, dir_idx=0):
     """
     Main function to run the
     """
-    # set torch params, and relevant directories
+    #set torch params, and relevant directories
     torch.set_num_threads(1)
     env_descr = 'map%i_%iagents_task%i' % (config.map_ind, config.num_agents,
                                            config.task_config)
     model_dir = Path('./models') / config.env_type / env_descr / config.model_name
-
+    
     if not model_dir.exists():
         run_num = 1
     else:
@@ -163,15 +158,16 @@ def run(config, dir_idx=0):
             run_num = max(exst_run_nums) + 1
     curr_run = 'run%i' % run_num
     run_dir = model_dir / curr_run
-    log_dir = run_dir / 'logs'  # creating the log files
+    log_dir = run_dir / 'logs' #creating the log files
     os.makedirs(log_dir)
     logger = SummaryWriter(str(log_dir))
+
 
     torch.manual_seed(run_num)
     np.random.seed(run_num)
 
-    # Load the environment
-    # Note that env loads multiple parallel threads (default = 12)
+    #Load the environment
+    #Note that env loads multiple parallel threads (default = 12)
     env, SRObj = search_and_rescue(
         seed=10,
         num_objects=config.num_objects,
@@ -194,13 +190,13 @@ def run(config, dir_idx=0):
         explore_mode=bool(config.explore_mode)
     )
 
-    # add the nonlinear units for the NN
+    #add the nonlinear units for the NN
     if config.nonlinearity == 'relu':
         nonlin = torch.nn.functional.relu
     elif config.nonlinearity == 'leaky_relu':
         nonlin = torch.nn.functional.leaky_relu
 
-    # initialize rewwad heads
+    #initialize rewwad heads
     if config.intrinsic_reward == 0:
         n_intr_rew_types = 0
         sep_extr_head = True
@@ -209,9 +205,9 @@ def run(config, dir_idx=0):
         sep_extr_head = False
     n_rew_heads = n_intr_rew_types + int(sep_extr_head)
 
-    # this block of code initializes the model and parameters associated with the training
-    # Load model from file if provided, else initialize e a SAC model
-    # Initailize the model
+    #this block of code initializes the model and parameters associated with the training
+    #Load model from file if provided, else initialize e a SAC model
+    #Initailize the model
     print(f"config load model: {config.load_model}")
     print(f"config model path: {config.model_path}")
     if config.load_model and config.model_path is not None:
@@ -238,21 +234,21 @@ def run(config, dir_idx=0):
                                   beta=config.beta,
                                   n_intr_rew_types=n_intr_rew_types,
                                   sep_extr_head=sep_extr_head)
-    # initialize
-    # Note: Need to include the size of the message space
+    #initialize
+    #Note: Need to include the size of the message space
     replay_buffer = ReplayBuffer(config.buffer_length, model.nagents,
                                  env.state_space,
                                  env.observation_space,
                                  env.action_space)
     if config.rogue_agents is not None:
-        # set up adversarial buffer
+        #set up adversarial buffer
         adv_buffer = ReplayBuffer(config.buffer_length, model.nagents,
-                                  env.state_space,
-                                  env.observation_space,
+                                 env.state_space,
+                                 env.observation_space,
 
-                                  env.action_space)
+                                 env.action_space)
 
-    # Initialize intrinsic rewards
+    #Initialize intrinsic rewards
     intr_rew_rms = [[RunningMeanStd()
                      for i in range(config.num_agents)]
                     for j in range(n_intr_rew_types)]
@@ -275,19 +271,19 @@ def run(config, dir_idx=0):
     steps_since_update = 0
     rollout_id = 0
 
-    # Reset state
+    #Reset state
     state, obs, target_pos = env.reset()
-    # initialize processing time for steps
+    #initialize processing time for steps
     t_rollout = np.zeros(config.n_rollout_threads)
     rollout_ids = np.zeros_like(t_rollout)
     bool_rollout = np.zeros(config.n_rollout_threads, dtype=bool)
     need_plot = bool_rollout.copy()
 
-    # initialize global rewards
+    #initialize global rewards
     global_rewards = np.zeros_like(rollout_ids)
     global_adv_rewards = np.zeros_like(global_rewards)
 
-    # initialize the vectors
+    #initialize the vectors
     rewards_with_timer = np.zeros(config.n_rollout_threads)
     old_rewards_with_timer = np.zeros_like(rewards_with_timer)
     old_adv_rewards_with_timer = np.zeros_like(old_rewards_with_timer)
@@ -307,48 +303,47 @@ def run(config, dir_idx=0):
         rollout_ids=rollout_ids
     )
 
-    # This block of code defines the cooperative and adv agents and user inputss
-    # get the agent ids
+    #This block of code defines the cooperative and adv agents and user inputss
+    #get the agent ids
     if config.rogue_agents is not None:
-        rogue_agents = config.rogue_agents  # rogue agents
-        c_agents = [a + 1 for a in range(config.num_agents) if a + 1 not in rogue_agents]  # cooperative agents
+        rogue_agents = config.rogue_agents #rogue agents
+        c_agents = [a+1 for a in range(config.num_agents) if a+1 not in rogue_agents] #cooperative agents
         print(f"rogue_agents: {rogue_agents}")
         print(f"c_agents: {c_agents}")
     else:
-        c_agents = [a + 1 for a in range(config.num_agents)]
+        c_agents = [a+1 for a in range(config.num_agents)]
 
-    # training parameters
+    #training parameters
     global_time = []
 
-    # initialize aggregations for saving into a csv
+    #initialize aggregations for saving into a csv
     agg_coop_rewards_time = None
     agg_adv_rewards_time = None
 
-    # compute parameters for beta
-    param_k = -np.log(config.beta_low / config.beta) / (1 - config.threshold_t) * config.max_episode_length
+    #compute parameters for beta
+    param_k = -np.log(config.beta_low/config.beta) / (1 - config.threshold_t)*config.max_episode_length
 
-    # training starts here
-    while t < config.train_time:  # and not np.all(bool_rollout)
+    #training starts here
+    while t < config.train_time: #and not np.all(bool_rollout)
         model.prep_rollouts(device='cuda' if config.gpu_rollout else 'cpu')
         # convert to torch tensor
-        torch_obs = apply_to_all_elements(obs, lambda x: torch.tensor(x, dtype=torch.float32,
-                                                                      device='cuda' if config.gpu_rollout else 'cpu'))
+        torch_obs = apply_to_all_elements(obs, lambda x: torch.tensor(x, dtype=torch.float32, device='cuda' if config.gpu_rollout else 'cpu'))
         # get actions as torch tensors
         torch_agent_actions = model.step(torch_obs, explore=True)
-        # this block of code provides the
+        #this block of code provides the
         # convert actions to numpy arrays
         agent_actions = apply_to_all_elements(torch_agent_actions, lambda x: x.cpu().data.numpy())
         # rearrange actions to be per environment
         actions = [[ac[i] for ac in agent_actions] for i in range(int(active_envs.sum()))]
 
-        # this block of code tries to take a step. If not possible, it restarts the environment
+        #this block of code tries to take a step. If not possible, it restarts the environment
         try:
             with timeout(seconds=1):
                 next_state, next_obs, rewards, dones, infos = env.step(actions, env_mask=active_envs)
                 if config.rogue_agents is not None:
                     adv_rewards = np.array([i['adv_rewards'] for i in infos],
-                                           dtype=float)
-                    # print(f"Testing adversarial rewars: {adv_rewards}")
+                                          dtype=float)
+                    #print(f"Testing adversarial rewars: {adv_rewards}")
         # either environment got stuck or vizdoom crashed (vizdoom is unstable w/ multi-agent scenarios)
         except (TimeoutError, ViZDoomErrorException, ViZDoomIsNotRunningException, ViZDoomUnexpectedExitException) as e:
             print("Environments are broken...")
@@ -368,7 +363,7 @@ def run(config, dir_idx=0):
 
         steps_since_update += int(active_envs.sum())
 
-        # This block of code ccomputes the intrinsic rewards.
+        #This block of code ccomputes the intrinsic rewards.
         if config.intrinsic_reward == 1:
             # if using state-visit counts, store state indices
             # shape = (n_envs, n_agents, n_inds)
@@ -380,37 +375,36 @@ def run(config, dir_idx=0):
                                               update_irrms=True, active_envs=active_envs,
                                               device='cpu')
             intr_rews = apply_to_all_elements(intr_rews, lambda x: x.numpy().flatten())
-            # print(f"intr_rews: {intr}")
+            #print(f"intr_rews: {intr}")
         else:
             intr_rews = None
             state_inds = None
             state_inds_t = None
 
-        # block of code to compute extrinsic rewards based on unique state visits
+        #block of code to compute extrinsic rewards based on unique state visits
         if config.explore_mode == 1:
-            # print(f"max episode: {config.max_episode_length}")
+            #print(f"max episode: {config.max_episode_length}")
             rewards_with_timer, adv_rewards_with_timer = SRObj.compute_final_reward()
             rewards = rewards_with_timer - old_rewards_with_timer
             adv_rewards = adv_rewards_with_timer - old_adv_rewards_with_timer
             old_rewards_with_timer = rewards_with_timer.copy()
             old_adv_rewards_with_timer = adv_rewards_with_timer.copy()
-            # print(f"rewards: {rewards_with_timer}")
-            # print(f"adv rewards: {adv_rewards_with_timer}")
+            #print(f"rewards: {rewards_with_timer}")
+            #print(f"adv rewards: {adv_rewards_with_timer}")
 
-        # Note: Need to include Message space as part of the push method
+        #Note: Need to include Message space as part of the push method
         replay_buffer.push(state, obs, agent_actions, rewards, next_state, next_obs, dones,
                            state_inds=state_inds)
-        # print(f"adv rewards: {adv_rewards}")
+        #print(f"adv rewards: {adv_rewards}")
         if config.rogue_agents is not None:
             adv_buffer.push(state, obs, agent_actions, adv_rewards, next_state, next_obs, dones,
-                            state_inds=state_inds)
+                               state_inds=state_inds)
 
-        # print(f"rewards: {rewards}")
+        #print(f"rewards: {rewards}")
         env_ep_extr_rews[active_envs.astype(bool)] += np.array(rewards)
-        env_extr_rets[active_envs.astype(bool)] += np.array(rewards) * config.gamma_e ** (
-        env_times[active_envs.astype(bool)])
+        env_extr_rets[active_envs.astype(bool)] += np.array(rewards) * config.gamma_e**(env_times[active_envs.astype(bool)])
         env_times += active_envs.astype(int)
-        # print(f"env_times: {env_times}")
+        #print(f"env_times: {env_times}")
         if intr_rews is not None:
             for i in range(n_intr_rew_types):
                 for j in range(config.num_agents):
@@ -418,11 +412,11 @@ def run(config, dir_idx=0):
         over_time = env_times >= config.max_episode_length
         full_dones = np.zeros(config.n_rollout_threads)
 
-        # dones is for active environment, full_dones contains the global array
+        #dones is for active environment, full_dones contains the global array
         for i, env_i in enumerate(np.where(active_envs)[0]):
             full_dones[env_i] = dones[i]
 
-        # call the visualize and the update function here
+        #call the visualize and the update function here
         if np.any(full_dones) or np.any(over_time):
             SRObj.update_global_state(
                 state=next_state,
@@ -446,7 +440,7 @@ def run(config, dir_idx=0):
         active_need_reset = np.logical_or(dones, active_over_time)
 
         if any(need_reset):
-            # reset environemnt
+            #reset environemnt
             try:
                 with timeout(seconds=100):
                     SRObj.update_global_state(
@@ -459,13 +453,12 @@ def run(config, dir_idx=0):
                         step=t
                     )
                     print(f"Episode complete for environments: {np.where(need_reset)[0]}")
-                    # print(f"Bool rollout: {bool_rollout}")
+                    #print(f"Bool rollout: {bool_rollout}")
 
                     state, obs, target_pos = env.reset(need_reset=need_reset)
 
             # either environment got stuck or vizdoom crashed (vizdoom is unstable w/ multi-agent scenarios)
-            except (TimeoutError, ViZDoomErrorException, ViZDoomIsNotRunningException,
-                    ViZDoomUnexpectedExitException) as e:
+            except (TimeoutError, ViZDoomErrorException, ViZDoomIsNotRunningException, ViZDoomUnexpectedExitException) as e:
                 print("Environments are broken...")
                 env.close(force=True)
                 print("Closed environments, starting new...")
@@ -481,7 +474,7 @@ def run(config, dir_idx=0):
                 env_times = np.zeros(config.n_rollout_threads, dtype=int)
         else:
             state, obs = next_state, next_obs
-            # print(f"bool rollout 4: {bool_rollout}")
+            #print(f"bool rollout 4: {bool_rollout}")
             SRObj.update_global_state(
                 state=state,
                 active_envs=active_envs,
@@ -492,7 +485,7 @@ def run(config, dir_idx=0):
                 step=t
             )
 
-            # saving
+            #saving
             step_range = [i for i in range(int(t), int(t + config.n_rollout_threads))]
             bool_range = np.asarray(step_range) % config.img_interval == 0
             if np.any(bool_range):
@@ -505,38 +498,35 @@ def run(config, dir_idx=0):
                     target_pos=target_pos
                 )
 
-        # add adv_rewars to cases where over_time
+        #add adv_rewars to cases where over_time
         if config.explore_mode == 0 and config.rogue_agents is not None:
             for i, env_i in enumerate(np.where(over_time)[0]):
                 adv_rewards[i] += 10
 
-        # This block of code keeps track of which environments are completed
-        # dones is for active environment, full_dones contains the global array
+        #This block of code keeps track of which environments are completed
+        #dones is for active environment, full_dones contains the global array
         for i, env_i in enumerate(np.where(active_envs)[0]):
             global_rewards[env_i] = rewards[i]
             if config.rogue_agents is not None:
                 global_adv_rewards[env_i] = adv_rewards[i]
             if full_dones[env_i] > 0 or over_time[env_i] > 0:
                 rollout_ids[env_i] += 1
-            if not bool_rollout[env_i] and (full_dones[env_i] or over_time[env_i]) > 0:
-                t_rollout[env_i] = t  # if false, then store the numbers
+            if not bool_rollout[env_i] and (full_dones[env_i]  or over_time[env_i])> 0:
+                t_rollout[env_i] = t #if false, then store the numbers
                 bool_rollout[env_i] = True
 
-        # add adv_rewards for over_time
-        # This block of code resets environment when all the targets have been located in all environments and writes to global_time.txt
-        # reinitialize after all the enviroments have been collected
+        #add adv_rewards for over_time
+        #This block of code resets environment when all the targets have been located in all environments and writes to global_time.txt
+        #reinitialize after all the enviroments have been collected
 
-        # Export time
+        #Export time
         if config.explore_mode == 0 or config.explore_mode == 1:
             # print(f'global rewards: {global_rewards}')
             # print(f"global adv rewards: {global_adv_rewards}")
-            agg_coop_rewards_time = global_rewards if agg_coop_rewards_time is None else np.vstack(
-                (agg_coop_rewards_time, global_rewards))
-            agg_adv_rewards_time = global_adv_rewards if agg_adv_rewards_time is None else np.vstack(
-                (agg_adv_rewards_time, global_adv_rewards))
+            agg_coop_rewards_time = global_rewards if agg_coop_rewards_time is None else np.vstack((agg_coop_rewards_time, global_rewards))
+            agg_adv_rewards_time = global_adv_rewards if agg_adv_rewards_time is None else np.vstack((agg_adv_rewards_time, global_adv_rewards))
             np.savetxt(os.path.join(config.output_dir, "rewards_with_time.csv"), agg_coop_rewards_time, delimiter=',')
-            np.savetxt(os.path.join(config.output_dir, "adv_rewards_with_time.csv"), agg_adv_rewards_time,
-                       delimiter=',')
+            np.savetxt(os.path.join(config.output_dir, "adv_rewards_with_time.csv"), agg_adv_rewards_time, delimiter=',')
         if np.all(bool_rollout):
             global_time.append(np.mean(t_rollout))
             t_rollout = np.zeros(config.n_rollout_threads)
@@ -544,12 +534,12 @@ def run(config, dir_idx=0):
             print(f"global time: {global_time}")
             with open(os.path.join(config.output_dir, "global_time.txt"), "a") as f:
                 f.write(f"Mean Global Time for rollout {rollout_id} is {global_time}")
-            # if config.explore_mode == 1:
-            # np.savetxt("rewards_with_time.csv", agg_coop_rewards_time, delimiter=',')
-            # np.savetxt("adv_rewards_with_time.csv", agg_adv_rewards_time, delimiter=',')
+            #if config.explore_mode == 1:
+                # np.savetxt("rewards_with_time.csv", agg_coop_rewards_time, delimiter=',')
+                # np.savetxt("adv_rewards_with_time.csv", agg_adv_rewards_time, delimiter=',')
         ###-------end of block--------------------------------------------------------
 
-        # This block keeps track of both intrinsic and extrinsic rewards
+        #This block keeps track of both intrinsic and extrinsic rewards
 
         for env_i in np.where(need_reset)[0]:
             recent_ep_extr_rews.append(env_ep_extr_rews[env_i])
@@ -569,7 +559,7 @@ def run(config, dir_idx=0):
                 rewards_with_timer[env_i] = 0
                 old_rewards_with_timer[env_i] = 0
                 old_adv_rewards_with_timer[env_i] = 0
-                # r_ext[env_i] = 0
+                #r_ext[env_i] = 0
             eps_this_turn += 1
 
             if eps_this_turn + active_envs.sum() - 1 >= config.metapol_episodes:
@@ -582,7 +572,7 @@ def run(config, dir_idx=0):
             if config.env_type == 'gridworld':
                 recent_tiers_completed.append(infos[i]['tiers_completed'])
 
-        # This block of code is where the RL model is updated
+        #This block of code is where the RL model is updated
         if eps_this_turn >= config.metapol_episodes:
             if not config.uniform_heads and n_rew_heads > 1:
                 meta_turn_rets = np.array(meta_turn_rets)
@@ -590,14 +580,13 @@ def run(config, dir_idx=0):
                     for errms in extr_ret_rms:
                         errms.mean = meta_turn_rets.mean()
                 extr_ret_rms[model.curr_pol_heads[0]].update(meta_turn_rets)
-                # Updates the meta policy
+                #Updates the meta policy
                 for i in range(config.metapol_updates):
                     model.update_heads_onpol(meta_turn_rets, extr_ret_rms, logger=logger)
             pol_heads = model.sample_pol_heads(uniform=config.uniform_heads)
-            # Troubleshoot policy heads:
+            #Troubleshoot policy heads:
             with open(os.path.join(config.output_dir, "metapolicy_info.txt"), "a") as f:
-                f.write(
-                    f"rollout_id: {rollout_id}, config uniform heads: {config.uniform_heads}, episodes this turn: {eps_this_turn}, pol_heads: {pol_heads}")
+                f.write(f"rollout_id: {rollout_id}, config uniform heads: {config.uniform_heads}, episodes this turn: {eps_this_turn}, pol_heads: {pol_heads}")
             print(f"config uniform heads: {config.uniform_heads}")
             print(f"episodes this turn: {eps_this_turn}")
             print(f"roll_out_id is {rollout_id}")
@@ -607,7 +596,7 @@ def run(config, dir_idx=0):
             meta_turn_rets = []
             active_envs = np.ones(config.n_rollout_threads)
 
-        # saving intrinsic rewards to file
+        #saving intrinsic rewards to file
         # print(f"length of intr rews: {len(intr_rews)}")
         # print(f"length of arrays: {(len(intr_rews[0]))}")
 
@@ -620,7 +609,7 @@ def run(config, dir_idx=0):
                 (steps_since_update >= config.steps_per_update)):
             steps_since_update = 0
             print('Updating at time step %i' % t)
-            # print(f"External rewards at time {t}: {r_ext}")
+            #print(f"External rewards at time {t}: {r_ext}")
             model.prep_training(device='cuda' if config.use_gpu else 'cpu')
 
             for u_i in range(config.num_updates):
@@ -631,8 +620,8 @@ def run(config, dir_idx=0):
                 ##additional block of coded for adversarial rewards
                 if config.rogue_agents is not None:
                     adv_sample = adv_buffer.sample(config.batch_size,
-                                                   to_gpu=config.use_gpu,
-                                                   state_inds=(config.intrinsic_reward == 1))
+                                            to_gpu=config.use_gpu,
+                                            state_inds=(config.intrinsic_reward == 1))
 
                 if config.intrinsic_reward == 0:  # no intrinsic reward
                     intr_rews = None
@@ -647,28 +636,25 @@ def run(config, dir_idx=0):
                     intr_rews = get_intrinsic_rewards(novelties, config, intr_rew_rms,
                                                       update_irrms=False,
                                                       device='cuda' if config.use_gpu else 'cpu')
-                    # print(f"intr_rews: {intr_rews}")
+                    #print(f"intr_rews: {intr_rews}")
                 if config.rogue_agents is None and config.inference == 0:
                     model.update_critic(sample, logger=logger, intr_rews=intr_rews, selected_agent_ids=c_agents)
                     model.update_policies(sample, logger=logger)
                     model.update_all_targets()
                 else:
                     if config.inference == 0:
-                        # get the sample for adversarial agents
-                        # for critic_iter in range(1):
-                        # compute beta for cooperative agents
-                        beta_running = config.beta if env_times[
-                                                          0] <= config.threshold_t * config.max_episode_length else config.beta * np.exp(
-                            -param_k * env_times[0])
-                        # print(f"The value of beta is: {beta_running}")
+                        #get the sample for adversarial agents
+                        #for critic_iter in range(1):
+                        #compute beta for cooperative agents
+                        beta_running = config.beta if env_times[0] <= config.threshold_t*config.max_episode_length else config.beta*np.exp(-param_k*env_times[0])
+                        #print(f"The value of beta is: {beta_running}")
                         model.update_critic(sample, logger=logger, intr_rews=intr_rews, selected_agent_ids=c_agents)
                         model.update_policies(sample, logger=logger, selected_agent_ids=c_agents, beta=beta_running)
                         model.update_all_targets()
 
-                        # adversarial agents
-                        # for critic_iter in range(1):
-                        model.update_critic(adv_sample, logger=logger, intr_rews=intr_rews,
-                                            selected_agent_ids=rogue_agents)
+                        #adversarial agents
+                        #for critic_iter in range(1):
+                        model.update_critic(adv_sample, logger=logger, intr_rews=intr_rews, selected_agent_ids=rogue_agents)
                         model.update_policies(adv_sample, logger=logger, selected_agent_ids=rogue_agents, beta=0.0)
                         model.update_all_targets()
 
@@ -684,8 +670,7 @@ def run(config, dir_idx=0):
                                               np.mean(recent_ep_intr_rews[i][j]), t)
                 for i in range(config.num_agents):
                     logger.add_scalar('agent%i/n_found_treasures' % i, np.mean(recent_found_treasures[i]), t)
-                logger.add_scalar('total_n_found_treasures',
-                                  sum(np.array(recent_found_treasures[i]) for i in range(config.num_agents)).mean(), t)
+                logger.add_scalar('total_n_found_treasures', sum(np.array(recent_found_treasures[i]) for i in range(config.num_agents)).mean(), t)
                 if config.env_type == 'gridworld':
                     logger.add_scalar('tiers_completed', np.mean(recent_tiers_completed), t)
 
@@ -703,7 +688,6 @@ def run(config, dir_idx=0):
 
     return model, t_rollout, global_time
 
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("model_name",
@@ -717,14 +701,14 @@ if __name__ == '__main__':
     parser.add_argument("--num_objects", help="Number of treasures", type=int,
                         default=2)
     parser.add_argument("--task_config", help="Index of task configuration",
-                        type=int, default=1)  # probably not relevant
+                        type=int, default=1) #probably not relevant
     parser.add_argument("--frame_skip", help="How many frames to skip per step (only for vizdoom)", type=int,
                         default=2)
     parser.add_argument("--intrinsic_reward", type=int, default=1,
                         help="Use intrinsic reward for exploration\n" +
                              "0: No intrinsic reward\n" +
                              "1 (default): Intrinsic reward using state visit counts")
-    parser.add_argument("--explr_types", type=int, nargs='*', default=[1, 2, 3],  # change to [2, 4]
+    parser.add_argument("--explr_types", type=int, nargs='*', default=[1, 2, 3], #change to [2, 4]
                         help="Type of exploration, can provide multiple\n" +
                              "0: Independent exploration\n" +
                              "1: Minimum exploration\n" +
@@ -737,10 +721,10 @@ if __name__ == '__main__':
                         help="Weighting for intrinsic reward")
     parser.add_argument("--decay", type=float, default=0.7,
                         help="Decay rate for state-visit counts in intrinsic reward")
-    parser.add_argument("--n_rollout_threads", default=12, type=int)  # number of parallel environments
+    parser.add_argument("--n_rollout_threads", default=12, type=int) #number of parallel environments
     parser.add_argument("--buffer_length", default=int(1e6), type=int,
                         help="Set to 5e5 for ViZDoom (if memory limited)")
-    # parser.add_argument("--train_time", default=int(1e6), type=int)
+    #parser.add_argument("--train_time", default=int(1e6), type=int)
     parser.add_argument("--train_time", default=int(1e4), type=int)
     parser.add_argument("--max_episode_length", default=50000, type=int)
     parser.add_argument("--steps_per_update", default=100, type=int)
@@ -756,7 +740,7 @@ if __name__ == '__main__':
                         default=1024, type=int,
                         help="Batch size for training. \n"
                              "Set to 128 for ViZDoom scenarios")
-    # parser.add_argument("--save_interval", default=100000, type=int)
+    #parser.add_argument("--save_interval", default=100000, type=int)
     parser.add_argument("--save_interval", default=200, type=int)
     parser.add_argument("--pol_hidden_dim", default=32, type=int)
     parser.add_argument("--critic_hidden_dim", default=128, type=int,
@@ -783,24 +767,24 @@ if __name__ == '__main__':
                         help='Use GPU for training')
     parser.add_argument("--gpu_rollout", action='store_true',
                         help='Use GPU for rollouts (more useful for lots of '
-                             'parallel envs or image-based observations')
+                        'parallel envs or image-based observations')
 
     parser.add_argument("--length", default=20, type=int)
     parser.add_argument("--width", default=20, type=int)
     parser.add_argument("--rogue_agents", default=None, type=list)
     parser.add_argument("--rogue_reward_factor", default=1.0, type=float)
-    # output directory
+    #output directory
     parser.add_argument("--output_dir", default="out_baseline", type=str)
-    # adding communication radius to the list of arguments
+    #adding communication radius to the list of arguments
     parser.add_argument("--comm_radius", default=20, type=int)
 
-    # add parameters relevant to imaage and save interval
+    #add parameters relevant to imaage and save interval
     parser.add_argument("--img_interval", default=100, type=int,
                         help="Frequency with which the images are saved")
     parser.add_argument("--csv_interval", default=1000, type=int,
                         help="Frequency with which the csvs are saved")
 
-    # parameters associated with load_model
+    #parameters associated with load_model
     parser.add_argument("--load_model", default=False, type=bool,
                         help="whether to load a model from past state")
     parser.add_argument("--model_path", default=None, type=str,
@@ -808,22 +792,22 @@ if __name__ == '__main__':
     parser.add_argument("--inference", default=0, type=int,
                         help="Bool to select if we are interested in inference only")
 
-    # parameter associated with stochastic policy
+    #parameter associated with stochastic policy
     # parameters associated with load_model
     parser.add_argument("--random_target", default=1, type=int,
                         help="Whether we have a stochastic target or not")
-    parser.add_argument("--list_of_random_targets", nargs="+", default=None,
+    parser.add_argument("--list_of_random_targets", nargs="+",  default=None,
                         help="Whether we have a stochastic target or not")
-    parser.add_argument("--random_epsilon", default=None, type=int,
+    parser.add_argument("--random_epsilon",  default=None, type=int,
                         help="Bounding the randomness by epsilon")
     parser.add_argument("--number_of_random_targets", default=None, type=int,
                         help="Whether we have a stochastic target or not")
 
-    # parameters pertaining to extrinsic reward structure
+    #parameters pertaining to extrinsic reward structure
     parser.add_argument("--explore_mode", default=0, type=int,
                         help="Whether we should assign")
 
-    # parameters for weighting extrinsic vs. intrinsic reward
+    #parameters for weighting extrinsic vs. intrinsic reward
     parser.add_argument("--threshold_t", default=0.4, type=float,
                         help="Fraction of time for which intrinsic rewards are weighed at their max")
     parser.add_argument("--beta_low", default=0.001, type=float,
@@ -843,9 +827,9 @@ if __name__ == '__main__':
     print(f"config.train_time: {config.train_time}")
     print(f"config.load _model {config.load_model}")
     print(f"config.model_dict {config.model_path}")
-    # Add iinputs either from the command line or from here
-    # config.rogue_agents = [3]
+    #Add iinputs either from the command line or from here
+    #config.rogue_agents = [3]
 
-    # print(env)
+    #print(env)
     model, t_roll, global_time = run(config)
 
