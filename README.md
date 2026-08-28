@@ -169,7 +169,3 @@ tensorboard --logdir models
 - Add scripts for standardized training/evaluation runs
 - Add tests for environment loading and reward computation
 
-## License
-
-No license file is currently included in this repository. Add a `LICENSE` file before external distribution.
-
